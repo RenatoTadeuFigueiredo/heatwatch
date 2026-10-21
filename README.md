@@ -26,8 +26,8 @@ helper, no analytics. While the menu is closed it runs at **0.0 % CPU** with a
 
 - Menu bar dot driven by CPU and GPU die temperature plus both load figures, with
   a bump when the temperature climbs fast
-- Top five heat sources, ranked by energy draw **and** GPU time, grouped by
-  application (helpers roll into their app)
+- The three processes eating the GPU, in their own section whenever the GPU is
+  busy, above the five biggest energy draws (helpers roll into their app)
 - Per-machine thresholds: bands follow the machine's own idle floor, so an Air and
   a MacBook Pro both get a meaningful scale
 - Optional launch at login
@@ -74,7 +74,9 @@ Click the dot:
 |---|---|
 | `CPU 61.4 °C · 12 %` | Current CPU die temperature and total CPU load |
 | `GPU 58.2 °C · 96 %` | Hottest GPU cluster and GPU duty cycle |
-| App rows | Share of GPU time and energy draw over the last ~2 s; names are clipped in the middle, `—` means the process hides its energy counter (root-owned) |
+| `GPU heat` | Appears while the GPU is busy; the three processes with the most GPU time |
+| `Energy draw` | Five processes with the largest energy draw |
+| App rows | Both figures over the last ~2 s: share of GPU time, then watts; names are clipped in the middle, `—` means the process hides its energy counter (root-owned) |
 | `All processes: 7.1 W` | Total energy attributable to user processes |
 | `Open at login` | Registers the app as a login item |
 
@@ -95,8 +97,9 @@ level when the CPU die rises 2 °C within a minute. Load is part of it because a
 cooled Mac hides heavy work behind a flat temperature curve, and because a process
 can pin the GPU while the CPU stays quiet.
 
-The ranking sums each app's share of energy and share of GPU time, so a Metal or
-ML job with a tiny wattage still reaches the top. Thresholds track each die's own
+GPU time and energy are ranked separately, because watts alone bury a Metal or ML
+job that spins the accelerator at 0.1 W. The GPU section hides itself when the GPU
+is idle, and rows never repeat across the two lists. Thresholds track each die's own
 idle floor — dropping instantly, drifting up 2 % per tick — with fixed offsets of
 +8 °C and +18 °C. Absolute overrides win:
 

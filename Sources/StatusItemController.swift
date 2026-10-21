@@ -17,6 +17,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private var headerItem: NSMenuItem?
     private var gpuHeaderItem: NSMenuItem?
     private var rowItems: [NSMenuItem] = []
+    private var gpuRowItems: [NSMenuItem] = []
+    private var gpuCaptionItem: NSMenuItem?
+    private var energyCaptionItem: NSMenuItem?
+    private var gpuSectionSeparator: NSMenuItem?
     private var measuringItem: NSMenuItem?
     private var idleItem: NSMenuItem?
     private var totalItem: NSMenuItem?
@@ -203,6 +207,23 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         idleItem = disabled(L("menu.idle", "Nothing drawing energy right now"))
         menu.addItem(idleItem!)
 
+        gpuCaptionItem = disabledCaption(L("menu.gpuSection", "GPU heat"))
+        menu.addItem(gpuCaptionItem!)
+
+        gpuRowItems = (0..<3).map { _ in
+            let item = NSMenuItem(title: "", action: #selector(activateApp(_:)), keyEquivalent: "")
+            item.target = self
+            item.image = Self.blankIcon
+            menu.addItem(item)
+            return item
+        }
+
+        gpuSectionSeparator = .separator()
+        menu.addItem(gpuSectionSeparator!)
+
+        energyCaptionItem = disabledCaption(L("menu.energySection", "Energy draw"))
+        menu.addItem(energyCaptionItem!)
+
         rowItems = (0..<5).map { _ in
             let item = NSMenuItem(title: "", action: #selector(activateApp(_:)), keyEquivalent: "")
             item.target = self
@@ -227,20 +248,34 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         guard let report else {
             measuringItem?.isHidden = false
             idleItem?.isHidden = true
-            rowItems.forEach { $0.isHidden = true }
+            hideRows()
             totalItem?.isHidden = true
             return
         }
 
-        measuringItem?.isHidden = true
-        idleItem?.isHidden = !report.usages.isEmpty
+        // The GPU list only earns its space while the GPU is actually busy.
+        let gpuBusy = (lastReading?.gpuLoad ?? 0) >= 15 && !report.gpuUsages.isEmpty
+        fill(gpuRowItems, with: gpuBusy ? report.gpuUsages : [])
+        fill(rowItems, with: report.usages)
 
-        for (index, item) in rowItems.enumerated() {
-            guard index < report.usages.count else {
+        gpuCaptionItem?.isHidden = !gpuBusy
+        gpuSectionSeparator?.isHidden = !gpuBusy
+        energyCaptionItem?.isHidden = !gpuBusy
+
+        measuringItem?.isHidden = true
+        idleItem?.isHidden = !report.usages.isEmpty || !report.gpuUsages.isEmpty
+
+        totalItem?.isHidden = false
+        totalItem?.attributedTitle = footerText(report.totalWatts)
+    }
+
+    private func fill(_ items: [NSMenuItem], with usages: [EnergySampler.Usage]) {
+        for (index, item) in items.enumerated() {
+            guard index < usages.count else {
                 item.isHidden = true
                 continue
             }
-            let usage = report.usages[index]
+            let usage = usages[index]
             item.isHidden = false
             item.attributedTitle = usageTitle(name: usage.name, watts: usage.watts,
                                               gpuShare: usage.gpuShare)
@@ -248,9 +283,22 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             item.representedObject = usage.bundleIdentifier
             item.isEnabled = true
         }
+    }
 
-        totalItem?.isHidden = false
-        totalItem?.attributedTitle = footerText(report.totalWatts)
+    private func hideRows() {
+        (rowItems + gpuRowItems).forEach { $0.isHidden = true }
+        gpuCaptionItem?.isHidden = true
+        gpuSectionSeparator?.isHidden = true
+        energyCaptionItem?.isHidden = true
+    }
+
+    private func disabledCaption(_ title: String) -> NSMenuItem {
+        let item = disabled(title)
+        item.attributedTitle = NSAttributedString(string: title, attributes: [
+            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+            .foregroundColor: NSColor.secondaryLabelColor
+        ])
+        return item
     }
 
     private func disabled(_ title: String) -> NSMenuItem {

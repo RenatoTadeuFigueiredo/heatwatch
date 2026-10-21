@@ -22,9 +22,14 @@ final class EnergySampler {
     }
 
     struct Report {
+        /// Processes with the largest GPU time; disjoint from `usages`.
+        let gpuUsages: [Usage]
         let usages: [Usage]
         let totalWatts: Double
     }
+
+    /// Below this many GPU seconds in a window a process is not worth a row.
+    private static let gpuSecondsFloor = 0.1
 
     private struct Resolved {
         let key: String
@@ -149,26 +154,32 @@ final class EnergySampler {
 
         prune(now: now)
 
-        let scored = grouped.values.map { group -> (Group, Double, Double) in
-            let share = total > 0 ? Double(group.energy) / Double(total) * 100.0 : 0
-            let gpuShare = gpuTotal > 0 ? group.gpuSeconds / gpuTotal * 100.0 : 0
-            return (group, share, gpuShare)
+        func usage(_ group: Group) -> Usage {
+            Usage(name: group.name,
+                  icon: group.icon,
+                  bundleIdentifier: group.bundle,
+                  share: total > 0 ? Double(group.energy) / Double(total) * 100.0 : 0,
+                  gpuShare: gpuTotal > 0 ? group.gpuSeconds / gpuTotal * 100.0 : 0,
+                  watts: group.energyKnown ? Double(group.energy) / elapsed / 1e9 : nil)
         }
 
-        let usages = scored
-            .sorted { $0.1 + $0.2 > $1.1 + $1.2 }
+        // GPU time gets its own list: energy alone hides the process that is
+        // actually driving the die. The energy list then skips those rows.
+        let gpuTop = grouped
+            .filter { $0.value.gpuSeconds >= Self.gpuSecondsFloor }
+            .sorted { $0.value.gpuSeconds > $1.value.gpuSeconds }
+            .prefix(3)
+        let gpuKeys = Set(gpuTop.map(\.key))
+
+        let energyTop = grouped
+            .filter { !gpuKeys.contains($0.key) && $0.value.energy > 0 }
+            .sorted { $0.value.energy > $1.value.energy }
             .prefix(5)
-            .map { entry in
-                Usage(name: entry.0.name,
-                      icon: entry.0.icon,
-                      bundleIdentifier: entry.0.bundle,
-                      share: entry.1,
-                      gpuShare: entry.2,
-                      watts: entry.0.energyKnown ? Double(entry.0.energy) / elapsed / 1e9 : nil)
-            }
 
         let totalWatts = Double(total) / elapsed / 1e9
-        return Report(usages: Array(usages), totalWatts: totalWatts)
+        return Report(gpuUsages: gpuTop.map { usage($0.value) },
+                      usages: energyTop.map { usage($0.value) },
+                      totalWatts: totalWatts)
     }
 
     /// App metadata is stable for minutes, so it is cached to keep refreshes cheap.

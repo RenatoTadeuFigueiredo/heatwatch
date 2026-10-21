@@ -17,3 +17,5 @@
 "header.cpu" = "CPU %@ °C · %d %%";
 "header.gpuPending" = "GPU …";
 "menu.unknown" = "—";
+"menu.gpuSection" = "GPU heat";
+"menu.energySection" = "Energy draw";
