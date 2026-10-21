@@ -103,6 +103,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         menuIsOpen = true
 
+        temperature.primePower()
         buildStructure()
         let fresh = lastReportAt.map { Date().timeIntervalSince($0) < 30 } ?? false
         apply(fresh ? lastReport : nil)

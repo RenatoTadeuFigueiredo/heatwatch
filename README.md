@@ -92,7 +92,7 @@ Quit from the menu. Uninstall by deleting `/Applications/HeatWatch.app`.
 | GPU duty | `Device Utilization %` from the accelerator's `PerformanceStatistics` | ~1 ms / 5 s |
 | Per-app energy | `proc_pid_rusage(RUSAGE_INFO_V6).ri_energy_nj`, diffed between snapshots and grouped by bundle | ~6 ms / 15 s closed, 2 s while open |
 | Per-app GPU time | `AppUsage.accumulatedGPUTime` on each `AGXDeviceUserClient`, diffed the same way | only while the menu is open |
-| System power | `SystemPowerIn` (adapter) or `BatteryPower` (battery) from the battery's `PowerTelemetryData`, in milliwatts | ~1 ms / 5 s |
+| System power | `SystemPowerIn` (adapter) or `BatteryPower` (battery) from the battery's `PowerTelemetryData`, in milliwatts | ~1 ms / 15 s, refreshed on menu open |
 
 ### Two different watt numbers
 
@@ -132,12 +132,12 @@ Measured on an M3 Max, macOS 27:
 
 | State | CPU | Physical footprint |
 |---|---|---|
-| Idle, menu closed | 0.0–0.2 % | ~22 MB |
+| Idle, menu closed | 0.0–0.3 % | ~22 MB |
 | Menu open (2 s refresh) | ~0.6 % | ~23 MB |
 
-One temperature, GPU and power read every 5 s and one process scan every 15 s is
-the entire background cost; GPU time counters are only touched while the menu is
-open.
+One temperature and GPU read every 5 s, one battery read every 15 s and one process
+scan every 15 s is the entire background cost; GPU time counters are only touched
+while the menu is open.
 Icons and menu rows are reused instead of rebuilt.
 
 ## Compatibility

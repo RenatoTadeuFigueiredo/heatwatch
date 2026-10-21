@@ -56,6 +56,8 @@ final class TemperatureMonitor {
     private var gpuSensorCount = 0
     private var consecutiveFailures = 0
     private var stopped = false
+    private var lastPowerAt: TimeInterval = 0
+    private var power: Double = -1
 
     var onUpdate: ((Reading) -> Void)?
 
@@ -74,6 +76,11 @@ final class TemperatureMonitor {
             self.scheduleSensorRefresh()
             self.read()
         }
+    }
+
+    /// Forces the next tick to re-read the battery, e.g. when the menu opens.
+    func primePower() {
+        queue.async { [weak self] in self?.lastPowerAt = 0 }
     }
 
     func stop() {
@@ -112,7 +119,13 @@ final class TemperatureMonitor {
         let isFallback = sensorCount == 0
         let load = hw_cpu_load()
         let gpuLoad = hw_gpu_utilization()
-        let power = hw_system_power()
+        // Battery telemetry is the most expensive read of the tick and the
+        // value moves slowly, so it refreshes on its own 15 s cadence.
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastPowerAt >= 15 {
+            lastPowerAt = now
+            power = hw_system_power()
+        }
         let value: Double
 
         if isFallback {

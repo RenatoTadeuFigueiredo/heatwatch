@@ -16,7 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 /// Headless mode used for verification: prints one reading and one ranking.
-private func runProbe() {    let sensors = ProcessInfo.processInfo.environment["HEATWATCH_FORCE_FALLBACK"] == "1"
+private func runProbe() {
+    let sensors = ProcessInfo.processInfo.environment["HEATWATCH_FORCE_FALLBACK"] == "1"
         ? 0
         : Int(hw_temp_init())
     defer { hw_temp_close() }
@@ -73,9 +74,9 @@ private func runProbe() {    let sensors = ProcessInfo.processInfo.environment["
 private func runWatch(seconds: TimeInterval) {
     let monitor = TemperatureMonitor()
     monitor.onUpdate = { reading in
-        print(String(format: "level=%d temp=%.1f gpu=%.1f gpuLoad=%.0f load=%.0f",
+        print(String(format: "level=%d temp=%.1f gpu=%.1f gpuLoad=%.0f load=%.0f power=%.1f",
                      reading.level.rawValue, reading.value, reading.gpuValue,
-                     reading.gpuLoad, reading.load))
+                     reading.gpuLoad, reading.load, reading.power))
     }
     monitor.start()
 
