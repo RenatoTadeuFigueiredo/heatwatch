@@ -176,7 +176,8 @@ the machine.
 Bug reports and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 The code is a handful of small Swift/C files under `Sources/`; `--probe` prints one
 reading and one ranking without a UI, which is also what CI smokes, and `--watch`
-streams the computed heat level.
+streams the computed heat level. `touch /tmp/heatwatch.debug` makes the app append
+its per-tick report state to that file — attach it to bug reports.
 
 ## License
 

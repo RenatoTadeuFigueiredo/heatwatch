@@ -163,11 +163,13 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let previous = gpuBaseline
         gpuBaseline = current
 
+        Self.debugLog("collect gpu pids=\(current.count) prev=\(previous.count)")
         var deltas: [pid_t: Double] = [:]
         for (pid, nanoseconds) in current {
             guard let before = previous[pid], nanoseconds > before else { continue }
             deltas[pid] = Double(nanoseconds - before) / 1e9
         }
+        Self.debugLog("deltas=\(deltas.count) sum=\(deltas.values.reduce(0, +))")
         return deltas
     }
 
@@ -256,7 +258,17 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(quitItem())
     }
 
+    private static func debugLog(_ line: String) {
+        let path = "/tmp/heatwatch.debug"
+        guard FileManager.default.fileExists(atPath: path) else { return }
+        guard let handle = FileHandle(forWritingAtPath: path) else { return }
+        handle.seekToEndOfFile()
+        handle.write(Data((line + "\n").utf8))
+        try? handle.close()
+    }
+
     private func apply(_ report: EnergySampler.Report?) {
+        Self.debugLog("apply gpuRows=\(report?.gpuUsages.count ?? -1) energyRows=\(report?.usages.count ?? -1) gpuLoad=\(lastReading?.gpuLoad ?? -99)")
         guard let report else {
             measuringItem?.isHidden = false
             idleItem?.isHidden = true
