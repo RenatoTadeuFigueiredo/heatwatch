@@ -244,6 +244,54 @@ double hw_gpu_utilization(void)
     return busiest;
 }
 
+/* Whole-machine draw in watts: input power from the adapter, or battery
+   discharge. Values are milliwatts in the battery's power telemetry. */
+double hw_system_power(void)
+{
+    io_iterator_t iterator = 0;
+    if (IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("AppleSmartBattery"),
+                                     &iterator) != KERN_SUCCESS) {
+        return -1.0;
+    }
+
+    double watts = -1.0;
+    io_registry_entry_t battery;
+    while ((battery = IOIteratorNext(iterator)) != 0) {
+        Boolean external = false;
+        CFTypeRef connected = IORegistryEntryCreateCFProperty(battery, CFSTR("ExternalConnected"),
+                                                              kCFAllocatorDefault, 0);
+        if (connected != NULL) {
+            if (CFGetTypeID(connected) == CFBooleanGetTypeID()) {
+                external = CFBooleanGetValue((CFBooleanRef)connected);
+            }
+            CFRelease(connected);
+        }
+
+        CFTypeRef telemetry = IORegistryEntryCreateCFProperty(battery,
+                                                              CFSTR("PowerTelemetryData"),
+                                                              kCFAllocatorDefault, 0);
+        if (telemetry != NULL) {
+            if (CFGetTypeID(telemetry) == CFDictionaryGetTypeID()) {
+                CFTypeRef value = CFDictionaryGetValue((CFDictionaryRef)telemetry,
+                    external ? CFSTR("SystemPowerIn") : CFSTR("BatteryPower"));
+                long long milliwatts = 0;
+                if (value != NULL && CFGetTypeID(value) == CFNumberGetTypeID() &&
+                    CFNumberGetValue((CFNumberRef)value, kCFNumberLongLongType, &milliwatts)) {
+                    if (milliwatts < 0) milliwatts = -milliwatts; /* two's complement */
+                    if (milliwatts > 0 && milliwatts < 500000) watts = milliwatts / 1000.0;
+                }
+            }
+            CFRelease(telemetry);
+        }
+
+        IOObjectRelease(battery);
+        if (watts > 0) break;
+    }
+    IOObjectRelease(iterator);
+
+    return watts;
+}
+
 void hw_temp_close(void)
 {
     pthread_mutex_lock(&g_lock);

@@ -18,6 +18,10 @@ void hw_temp_close(void);
 
 double hw_gpu_utilization(void);
 
+/* ---- Whole-machine power in watts, -1 when no battery telemetry ---- */
+
+double hw_system_power(void);
+
 /* ---- CPU load fallback for Macs without exposed die sensors ---- */
 
 double hw_cpu_load(void);

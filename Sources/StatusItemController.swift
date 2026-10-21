@@ -16,6 +16,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private var backgroundBaselineTimer: Timer?
     private var headerItem: NSMenuItem?
     private var gpuHeaderItem: NSMenuItem?
+    private var powerHeaderItem: NSMenuItem?
     private var rowItems: [NSMenuItem] = []
     private var gpuRowItems: [NSMenuItem] = []
     private var gpuCaptionItem: NSMenuItem?
@@ -78,6 +79,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         if menuIsOpen {
             headerItem?.attributedTitle = cpuHeaderText()
             gpuHeaderItem?.attributedTitle = gpuHeaderText(reading)
+            powerHeaderItem?.attributedTitle = powerHeaderText(reading)
         }
     }
 
@@ -200,6 +202,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(gpuHeader)
         gpuHeaderItem = gpuHeader
 
+        let powerHeader = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        powerHeader.attributedTitle = lastReading.map(powerHeaderText) ??
+            NSAttributedString(string: L("header.powerPending", "System …"),
+                               attributes: Self.headerStyle)
+        powerHeader.isEnabled = true
+        powerHeader.isHidden = !(lastReading?.hasPower ?? true)
+        menu.addItem(powerHeader)
+        powerHeaderItem = powerHeader
+
         menu.addItem(.separator())
 
         measuringItem = disabled(L("menu.measuring", "Measuring…"))
@@ -249,6 +260,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             measuringItem?.isHidden = false
             idleItem?.isHidden = true
             hideRows()
+            powerHeaderItem?.isHidden = !(lastReading?.hasPower ?? true)
             totalItem?.isHidden = true
             return
         }
@@ -258,6 +270,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         fill(gpuRowItems, with: gpuBusy ? report.gpuUsages : [])
         fill(rowItems, with: report.usages)
 
+        powerHeaderItem?.isHidden = !(lastReading?.hasPower ?? false)
         gpuCaptionItem?.isHidden = !gpuBusy
         gpuSectionSeparator?.isHidden = !gpuBusy
         energyCaptionItem?.isHidden = !gpuBusy
@@ -343,6 +356,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         return NSAttributedString(string: value, attributes: Self.headerStyle)
     }
 
+    /// Wall or battery draw of the whole machine. The per-app list below only
+    /// sees user processes, so this is the number that matches a power meter.
+    private func powerHeaderText(_ reading: TemperatureMonitor.Reading) -> NSAttributedString {
+        let value = reading.hasPower
+            ? String(format: L("header.power", "System %@ W"),
+                     Self.decimal(reading.power, digits: 1))
+            : L("header.powerPending", "System …")
+        return NSAttributedString(string: value, attributes: Self.headerStyle)
+    }
+
     private func usageTitle(name: String, watts: Double?, gpuShare: Double) -> NSAttributedString {
         let style = NSMutableParagraphStyle()
         style.tabStops = [
@@ -379,7 +402,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     private func footerText(_ watts: Double) -> NSAttributedString {
-        NSAttributedString(string: String(format: L("menu.total", "All processes: %@ W"),
+        NSAttributedString(string: String(format: L("menu.appsTotal", "Apps: %@ W"),
                                           Self.decimal(watts, digits: 1)),
                            attributes: [
                             .font: NSFont.systemFont(ofSize: 11),

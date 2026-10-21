@@ -49,8 +49,9 @@ private func runProbe() {    let sensors = ProcessInfo.processInfo.environment["
 
         let temperature = sensors > 0 ? hw_temp_read_cpu() : -1
         let gpuTemperature = sensors > 0 ? hw_temp_read_gpu() : -1
-        print(String(format: "sensors=%d temp=%.1f°C gpu=%.1f°C gpuLoad=%.0f%% load=%.0f%%",
-                     sensors, temperature, gpuTemperature, hw_gpu_utilization(), hw_cpu_load()))
+        print(String(format: "sensors=%d temp=%.1f°C gpu=%.1f°C gpuLoad=%.0f%% load=%.0f%% system=%.1fW",
+                     sensors, temperature, gpuTemperature, hw_gpu_utilization(), hw_cpu_load(),
+                     hw_system_power()))
         guard let report else {
             print("no report")
             return

@@ -74,10 +74,11 @@ Click the dot:
 |---|---|
 | `CPU 61.4 °C · 12 %` | Current CPU die temperature and total CPU load |
 | `GPU 58.2 °C · 96 %` | Hottest GPU cluster and GPU duty cycle |
+| `System 98.3 W` | Measured draw of the whole machine: adapter input, or battery discharge on battery |
 | `GPU heat` | Appears while the GPU is busy; the three processes with the most GPU time |
 | `Energy draw` | Five processes with the largest energy draw |
 | App rows | Both figures over the last ~2 s: share of GPU time, then watts; names are clipped in the middle, `—` means the process hides its energy counter (root-owned) |
-| `All processes: 7.1 W` | Total energy attributable to user processes |
+| `Apps: 2.4 W` | Sum of the per-app meters. Much lower than the system figure — see below |
 | `Open at login` | Registers the app as a login item |
 
 Quit from the menu. Uninstall by deleting `/Applications/HeatWatch.app`.
@@ -91,6 +92,19 @@ Quit from the menu. Uninstall by deleting `/Applications/HeatWatch.app`.
 | GPU duty | `Device Utilization %` from the accelerator's `PerformanceStatistics` | ~1 ms / 5 s |
 | Per-app energy | `proc_pid_rusage(RUSAGE_INFO_V6).ri_energy_nj`, diffed between snapshots and grouped by bundle | ~6 ms / 15 s closed, 2 s while open |
 | Per-app GPU time | `AppUsage.accumulatedGPUTime` on each `AGXDeviceUserClient`, diffed the same way | only while the menu is open |
+| System power | `SystemPowerIn` (adapter) or `BatteryPower` (battery) from the battery's `PowerTelemetryData`, in milliwatts | ~1 ms / 5 s |
+
+### Two different watt numbers
+
+`System` is the machine's measured draw and the number a power meter would show.
+`Apps` is the sum of `ri_energy_nj` deltas over readable user processes. On Apple
+Silicon that counter covers CPU-side work of user processes only: it misses
+`kernel_task`, `WindowServer` and other root processes, GPU and ANE power, the
+display, and the memory subsystem. Measured side by side the app total can sit at
+2–14 W while the machine pulls ~98 W.
+
+So treat app watts as a *ranking signal* and the system figure as the truth.
+Shares between apps are still meaningful; the absolute per-app value is not.
 
 The dot color is `max(CPU band, GPU band, CPU load band, GPU load band)`, plus one
 level when the CPU die rises 2 °C within a minute. Load is part of it because a well
@@ -121,8 +135,9 @@ Measured on an M3 Max, macOS 27:
 | Idle, menu closed | 0.0–0.2 % | ~22 MB |
 | Menu open (2 s refresh) | ~0.6 % | ~23 MB |
 
-One temperature and GPU read every 5 s and one process scan every 15 s is the
-entire background cost; GPU time counters are only touched while the menu is open.
+One temperature, GPU and power read every 5 s and one process scan every 15 s is
+the entire background cost; GPU time counters are only touched while the menu is
+open.
 Icons and menu rows are reused instead of rebuilt.
 
 ## Compatibility
@@ -138,6 +153,10 @@ Icons and menu rows are reused instead of rebuilt.
 - Root-owned processes hide their energy counter, so rows like `WindowServer` show
   `—` upstream of a wattage; their GPU time is still measured, and kernel threads
   (no GPU queue) stay out of the ranking.
+- Per-app watts are an attribution proxy, not a partition of the system draw. Only
+  `System` matches a meter.
+- `System` needs battery telemetry, so a desktop Mac (no battery) shows no power
+  line.
 - Die temperature is not "how hot it feels"; the dots are a trend signal, not a
   thermal specification.
 - GPU temperature needs `PMU tdev` sensors; without them the GPU still counts

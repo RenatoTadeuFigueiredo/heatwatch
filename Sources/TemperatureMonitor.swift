@@ -16,11 +16,13 @@ final class TemperatureMonitor {
         let load: Double
         let gpuValue: Double
         let gpuLoad: Double
+        let power: Double
         let isFallback: Bool
         let level: HeatLevel
         let timestamp: Date
 
         var hasGpu: Bool { gpuValue > 0 || gpuLoad >= 0 }
+        var hasPower: Bool { power > 0 }
     }
 
     /// Thresholds follow each machine's own idle floor instead of a hardcoded
@@ -110,6 +112,7 @@ final class TemperatureMonitor {
         let isFallback = sensorCount == 0
         let load = hw_cpu_load()
         let gpuLoad = hw_gpu_utilization()
+        let power = hw_system_power()
         let value: Double
 
         if isFallback {
@@ -141,7 +144,7 @@ final class TemperatureMonitor {
 
         let baseline = updateFloor(value)
         let reading = Reading(value: value, load: max(load, 0),
-                              gpuValue: gpuValue, gpuLoad: gpuLoad,
+                              gpuValue: gpuValue, gpuLoad: gpuLoad, power: power,
                               isFallback: isFallback,
                               level: level(temperature: value, baseline: baseline, load: load,
                                            gpuTemperature: gpuValue, gpuBaseline: gpuFloor,

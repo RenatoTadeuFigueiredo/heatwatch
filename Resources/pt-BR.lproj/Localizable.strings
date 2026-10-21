@@ -8,7 +8,6 @@
 "header.pending" = "CPU …";
 "menu.measuring" = "Medindo…";
 "menu.idle" = "Nada consumindo energia agora";
-"menu.total" = "Todos os processos: %@ W";
 "menu.login" = "Abrir no login";
 "menu.quit" = "Sair do HeatWatch";
 "alert.login.title" = "Não foi possível alterar o item de login";
@@ -19,3 +18,6 @@
 "menu.unknown" = "—";
 "menu.gpuSection" = "Calor da GPU";
 "menu.energySection" = "Consumo de energia";
+"header.power" = "Sistema %@ W";
+"header.powerPending" = "Sistema …";
+"menu.appsTotal" = "Apps: %@ W";
