@@ -22,6 +22,6 @@ Notes
 - No network, no telemetry, no privileged helper, no TCC prompts.
 - Temperature comes from die sensors (Apple Silicon) or CPU load (Intel Macs).
 - Thresholds adapt to each machine's own idle floor; absolute overrides:
-    defaults write local.renato.heatwatch warmCelsius 70
-    defaults write local.renato.heatwatch hotCelsius 80
+    defaults write io.github.renatotadeufigueiredo.heatwatch warmCelsius 70
+    defaults write io.github.renatotadeufigueiredo.heatwatch hotCelsius 80
 - Requires macOS 13 or newer.

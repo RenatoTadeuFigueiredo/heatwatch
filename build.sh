@@ -10,6 +10,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+for locale in en pt-BR; do
+  ditto "$ROOT/Resources/$locale.lproj" "$APP/Contents/Resources/$locale.lproj"
+done
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 # Universal binary: Apple Silicon and Intel. Intel Macs have no `PMU tdie`
@@ -30,7 +33,7 @@ rm -f "$BUILD/HeatWatch-arm64" "$BUILD/HeatWatch-x86_64"
 
 # Ad-hoc signature with hardened runtime, so the same build can be notarized
 # later without changing the pipeline.
-codesign --force --options runtime --sign - --identifier local.renato.heatwatch "$APP"
+codesign --force --options runtime --sign - --identifier io.github.renatotadeufigueiredo.heatwatch "$APP"
 
 echo "built: $APP"
 echo "size: $(du -sh "$APP" | cut -f1)"

@@ -76,14 +76,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private func apply(level: HeatLevel) {
         currentLevel = level
         statusItem.button?.image = dotImages[level]
-        statusItem.button?.setAccessibilityLabel("Temperatura da CPU: \(label(for: level))")
+        statusItem.button?.setAccessibilityLabel(
+            String(format: L("a11y.level", "CPU temperature: %@"), label(for: level)))
     }
 
     private func label(for level: HeatLevel) -> String {
         switch level {
-        case .cool: return "normal"
-        case .warm: return "elevada"
-        case .hot: return "alta"
+        case .cool: return L("level.normal", "normal")
+        case .warm: return L("level.elevated", "elevated")
+        case .hot: return L("level.high", "high")
         }
     }
 
@@ -141,9 +142,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        measuringItem = disabled("Medindo…")
+        measuringItem = disabled(L("menu.measuring", "Measuring…"))
         menu.addItem(measuringItem!)
-        idleItem = disabled("Nada consumindo energia agora")
+        idleItem = disabled(L("menu.idle", "Nothing drawing energy right now"))
         menu.addItem(idleItem!)
 
         rowItems = (0..<5).map { _ in
@@ -204,10 +205,11 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let value: String
         if let reading = lastReading {
             value = reading.isFallback
-                ? "CPU \(Int(reading.load.rounded())) % de carga"
-                : "CPU \(Self.decimal(reading.value, digits: 1)) °C · \(Int(reading.load.rounded())) %"
+                ? String(format: L("header.load", "CPU %d %% load"), Int(reading.load.rounded()))
+                : String(format: L("header.temp", "CPU %@ °C · %d %%"),
+                         Self.decimal(reading.value, digits: 1), Int(reading.load.rounded()))
         } else {
-            value = "CPU …"
+            value = L("header.pending", "CPU …")
         }
 
         return NSAttributedString(string: value, attributes: [
@@ -234,7 +236,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     private func footerText(_ watts: Double) -> NSAttributedString {
-        NSAttributedString(string: "Todos os processos: \(Self.decimal(watts, digits: 1)) W",
+        NSAttributedString(string: String(format: L("menu.total", "All processes: %@ W"),
+                                          Self.decimal(watts, digits: 1)),
                            attributes: [
                             .font: NSFont.systemFont(ofSize: 11),
                             .foregroundColor: NSColor.secondaryLabelColor
@@ -242,7 +245,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     private func loginItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "Abrir no login", action: #selector(toggleLogin), keyEquivalent: "")
+        let item = NSMenuItem(title: L("menu.login", "Open at login"), action: #selector(toggleLogin), keyEquivalent: "")
         item.target = self
         item.state = SMAppService.mainApp.status == .enabled ? .on : .off
         item.isEnabled = true
@@ -250,7 +253,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     private func quitItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "Sair do HeatWatch", action: #selector(quit), keyEquivalent: "q")
+        let item = NSMenuItem(title: L("menu.quit", "Quit HeatWatch"), action: #selector(quit), keyEquivalent: "q")
         item.target = self
         item.isEnabled = true
         return item
@@ -273,7 +276,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             }
         } catch {
             let alert = NSAlert()
-            alert.messageText = "Não foi possível alterar o item de login"
+            alert.messageText = L("alert.login.title", "Could not change the login item")
             alert.informativeText = error.localizedDescription
             alert.runModal()
         }

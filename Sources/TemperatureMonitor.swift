@@ -23,7 +23,7 @@ final class TemperatureMonitor {
     /// figure, because an Air idles around 40 °C where an M3 Max idles near 60 °C.
     /// The floor drops instantly and drifts up slowly, so a warm room or a long
     /// render is absorbed without permanent false alarms.
-    /// Absolute overrides: `defaults write local.renato.heatwatch warmCelsius 70`.
+    /// Absolute overrides: `defaults write io.github.renatotadeufigueiredo.heatwatch warmCelsius 70`.
     private static let warmOffset = 8.0
     private static let hotOffset = 18.0
     private static var warmAbsolute: Double { threshold("warmCelsius") }

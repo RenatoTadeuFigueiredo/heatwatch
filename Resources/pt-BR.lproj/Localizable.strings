@@ -1,0 +1,13 @@
+"a11y.level" = "Temperatura da CPU: %@";
+"level.normal" = "normal";
+"level.elevated" = "elevada";
+"level.high" = "alta";
+"header.temp" = "CPU %@ °C · %d %%";
+"header.load" = "CPU %d %% de carga";
+"header.pending" = "CPU …";
+"menu.measuring" = "Medindo…";
+"menu.idle" = "Nada consumindo energia agora";
+"menu.total" = "Todos os processos: %@ W";
+"menu.login" = "Abrir no login";
+"menu.quit" = "Sair do HeatWatch";
+"alert.login.title" = "Não foi possível alterar o item de login";

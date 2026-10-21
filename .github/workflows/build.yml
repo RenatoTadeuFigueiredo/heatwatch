@@ -1,0 +1,31 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build universal bundle
+        run: ./build.sh
+
+      - name: Inspect architectures
+        run: lipo -info build/HeatWatch.app/Contents/MacOS/HeatWatch | tee arch.txt && grep -q x86_64 arch.txt && grep -q arm64 arch.txt
+
+      - name: Smoke test
+        run: |
+          ./build/HeatWatch.app/Contents/MacOS/HeatWatch --probe | tee probe.txt
+          grep -q "sensors=" probe.txt
+          grep -q "total=" probe.txt
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: HeatWatch-app
+          path: build/HeatWatch.app
+          if-no-files-found: error

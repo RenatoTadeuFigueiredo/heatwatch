@@ -1,0 +1,42 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches bundle version
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
+          test "v$version" = "${GITHUB_REF_NAME}" || {
+            echo "tag ${GITHUB_REF_NAME} does not match version $version"; exit 1; }
+
+      - name: Package
+        run: ./dist.sh
+
+      - name: Smoke test
+        run: ./build/HeatWatch.app/Contents/MacOS/HeatWatch --probe
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.zip
+            dist/*.dmg
+            dist/SHA256SUMS
+          body: |
+            Ad-hoc signed build — clear the quarantine flag once after installing:
+
+            ```sh
+            xattr -dr com.apple.quarantine /Applications/HeatWatch.app
+            ```
+
+            Verify the download against `SHA256SUMS` if you want.

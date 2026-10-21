@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-label="HeatWatch — menu bar heat indicator for macOS">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0b0e"/>
+      <stop offset="0.55" stop-color="#121014"/>
+      <stop offset="1" stop-color="#1d1012"/>
+    </linearGradient>
+    <radialGradient id="warm" cx="0.85" cy="0.15" r="0.75">
+      <stop offset="0" stop-color="#ff453a" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#ff453a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="cool" cx="0.12" cy="0.9" r="0.8">
+      <stop offset="0" stop-color="#30d158" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#30d158" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="dots" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#30d158"/>
+      <stop offset="0.5" stop-color="#ffd60a"/>
+      <stop offset="1" stop-color="#ff453a"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b1b22"/>
+      <stop offset="1" stop-color="#141419"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="320" fill="url(#bg)"/>
+  <rect width="1280" height="320" fill="url(#warm)"/>
+  <rect width="1280" height="320" fill="url(#cool)"/>
+
+  <g opacity="0.35" stroke="#2b2b33" stroke-width="1">
+    <path d="M0 80h1280M0 240h1280"/>
+    <path d="M760 0v320"/>
+  </g>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">
+    <text x="72" y="132" font-size="76" font-weight="700" letter-spacing="-2.5" fill="#f5f5f7">HeatWatch</text>
+    <text x="74" y="180" font-size="21" fill="#a1a1aa">A heat indicator that lives in the menu bar.</text>
+    <text x="74" y="210" font-size="21" fill="#6f6f7a">Green, yellow, red — and the five apps behind it.</text>
+
+    <g transform="translate(74 250)">
+      <circle cx="9" cy="0" r="9" fill="#30d158"/>
+      <circle cx="39" cy="0" r="9" fill="#ffd60a"/>
+      <circle cx="69" cy="0" r="9" fill="#ff453a"/>
+      <text x="96" y="6" font-size="14" fill="#8b8b94" letter-spacing="0.4">native AppKit · no Electron · 0.0 % idle CPU</text>
+    </g>
+  </g>
+
+  <g transform="translate(800 44)">
+    <rect x="0" y="0" width="410" height="232" rx="16" fill="url(#panel)" stroke="#30303a"/>
+    <path d="M0 34h410" stroke="#30303a"/>
+
+    <text x="18" y="22" font-size="13" fill="#9a9aa4" font-family="-apple-system, Helvetica, Arial, sans-serif">22:14</text>
+    <circle cx="382" cy="17" r="6" fill="#ffd60a"/>
+
+    <g font-family="-apple-system, Helvetica, Arial, sans-serif" font-size="13">
+      <text x="18" y="62" fill="#f0f0f3" font-weight="600">CPU 71.4 °C · 62 %</text>
+      <path d="M14 74h382" stroke="#2b2b33"/>
+
+      <g fill="#dcdce2">
+        <text x="18" y="100">Xcode</text>
+        <text x="18" y="126">Docker</text>
+        <text x="18" y="152">Safari</text>
+        <text x="18" y="178">node</text>
+        <text x="18" y="204">Spotlight</text>
+      </g>
+      <g fill="#8b8b94" text-anchor="end">
+        <text x="382" y="100">41.8 %</text>
+        <text x="382" y="126">17.2 %</text>
+        <text x="382" y="152">9.4 %</text>
+        <text x="382" y="178">6.1 %</text>
+        <text x="382" y="204">2.0 %</text>
+      </g>
+      <g fill="#30d158" opacity="0.55">
+        <rect x="196" y="92" width="120" height="5" rx="2.5"/>
+        <rect x="196" y="118" width="52" height="5" rx="2.5" fill="#ffd60a"/>
+        <rect x="196" y="144" width="30" height="5" rx="2.5" fill="#ffd60a"/>
+        <rect x="196" y="170" width="20" height="5" rx="2.5"/>
+        <rect x="196" y="196" width="8" height="5" rx="2.5"/>
+      </g>
+      <text x="18" y="224" font-size="11" fill="#77777f">All processes: 18.7 W</text>
+    </g>
+  </g>
+
+  <rect x="0" y="0" width="1280" height="4" fill="url(#dots)" opacity="0.9"/>
+</svg>
