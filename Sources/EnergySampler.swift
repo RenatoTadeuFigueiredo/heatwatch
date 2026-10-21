@@ -16,7 +16,9 @@ final class EnergySampler {
         let icon: NSImage?
         let bundleIdentifier: String?
         let share: Double
-        let watts: Double
+        let gpuShare: Double
+        /// Nil for processes whose energy counter is not readable (root-owned).
+        let watts: Double?
     }
 
     struct Report {
@@ -30,6 +32,15 @@ final class EnergySampler {
         let bundle: String?
         let icon: NSImage?
         let stamp: TimeInterval
+    }
+
+    private struct Group {
+        let name: String
+        let icon: NSImage?
+        let bundle: String?
+        var energy: UInt64
+        var energyKnown: Bool
+        var gpuSeconds: Double
     }
 
     private let queue = DispatchQueue(label: "heatwatch.energy", qos: .utility)
@@ -61,9 +72,11 @@ final class EnergySampler {
         }
     }
 
-    /// Ranks applications by energy delta between the baseline and a fresh sample.
+    /// Ranks applications by the energy and GPU time they accumulated between
+    /// the baseline and a fresh sample. Both signals are normalized to a share
+    /// and summed, so a process that only heats the GPU still shows up.
     /// Must be called on the main queue because app lookup uses AppKit.
-    func report(completion: @escaping (Report?) -> Void) {
+    func report(gpuSeconds: [pid_t: Double], completion: @escaping (Report?) -> Void) {
         queue.async { [weak self] in
             guard let self, let previous = self.baseline else {
                 DispatchQueue.main.async { completion(nil) }
@@ -76,61 +89,82 @@ final class EnergySampler {
             self.baseline = current
 
             let elapsed = max(current.timestamp - previous.timestamp, 0.5)
-            var deltas: [(pid: pid_t, energy: UInt64)] = []
-            deltas.reserveCapacity(current.energies.count)
+            var energyDeltas: [pid_t: UInt64] = [:]
+            energyDeltas.reserveCapacity(current.energies.count)
 
             for (pid, energy) in current.energies {
                 guard let before = previous.energies[pid], energy > before else { continue }
                 let delta = energy - before
-                if delta > 0 { deltas.append((pid, delta)) }
+                if delta > 0 { energyDeltas[pid] = delta }
             }
 
-            let total = deltas.reduce(UInt64(0)) { $0 &+ $1.energy }
-            guard total > 0 else {
+            let total = energyDeltas.values.reduce(UInt64(0)) { $0 &+ $1 }
+            let gpuTotal = gpuSeconds.values.reduce(0, +)
+            guard total > 0 || gpuTotal > 0 else {
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
 
-            // Resolving every pid is wasteful; keep anything above 0.2 % of the total.
-            deltas.sort { $0.energy > $1.energy }
+            // Resolving every pid is wasteful; keep anything above 0.2 % of the
+            // total, plus every process that put real time on the GPU.
+            let ranked = energyDeltas.sorted { $0.value > $1.value }
             let floor = Double(total) * 0.002
-            let candidates = deltas.prefix { Double($0.energy) >= floor }.prefix(40)
+            var candidates = Set(ranked.prefix { Double($0.value) >= floor }.prefix(40).map(\.key))
+            candidates.formUnion(gpuSeconds.filter { $0.value >= 0.05 }.keys)
 
             DispatchQueue.main.async {
-                completion(self.build(candidates: Array(candidates), total: total, elapsed: elapsed))
+                completion(self.build(candidates: Array(candidates), energies: energyDeltas,
+                                      total: total, gpuTotal: gpuTotal,
+                                      gpuSeconds: gpuSeconds, elapsed: elapsed))
             }
         }
     }
 
-    private func build(candidates: [(pid: pid_t, energy: UInt64)],
+    private func build(candidates: [pid_t],
+                       energies: [pid_t: UInt64],
                        total: UInt64,
+                       gpuTotal: Double,
+                       gpuSeconds: [pid_t: Double],
                        elapsed: TimeInterval) -> Report {
-        var grouped: [String: (name: String, icon: NSImage?, bundle: String?, energy: UInt64)] = [:]
+        var grouped: [String: Group] = [:]
         let ownPid = ProcessInfo.processInfo.processIdentifier
         let now = ProcessInfo.processInfo.systemUptime
 
-        for candidate in candidates where candidate.pid != ownPid {
-            guard let info = resolve(candidate.pid, now: now) else { continue }
+        for pid in candidates where pid != ownPid {
+            let energy = energies[pid]
+            let gpu = gpuSeconds[pid] ?? 0
+            guard (energy ?? 0) > 0 || gpu > 0, let info = resolve(pid, now: now) else { continue }
 
             if var existing = grouped[info.key] {
-                existing.energy &+= candidate.energy
+                existing.energy &+= energy ?? 0
+                existing.energyKnown = existing.energyKnown || energy != nil
+                existing.gpuSeconds += gpu
                 grouped[info.key] = existing
                 continue
             }
-            grouped[info.key] = (info.name, info.icon, info.bundle, candidate.energy)
+            grouped[info.key] = Group(name: info.name, icon: info.icon, bundle: info.bundle,
+                                      energy: energy ?? 0, energyKnown: energy != nil,
+                                      gpuSeconds: gpu)
         }
 
         prune(now: now)
 
-        let usages = grouped.values
-            .sorted { $0.energy > $1.energy }
+        let scored = grouped.values.map { group -> (Group, Double, Double) in
+            let share = total > 0 ? Double(group.energy) / Double(total) * 100.0 : 0
+            let gpuShare = gpuTotal > 0 ? group.gpuSeconds / gpuTotal * 100.0 : 0
+            return (group, share, gpuShare)
+        }
+
+        let usages = scored
+            .sorted { $0.1 + $0.2 > $1.1 + $1.2 }
             .prefix(5)
             .map { entry in
-                Usage(name: entry.name,
-                      icon: entry.icon,
-                      bundleIdentifier: entry.bundle,
-                      share: Double(entry.energy) / Double(total) * 100.0,
-                      watts: Double(entry.energy) / elapsed / 1e9)
+                Usage(name: entry.0.name,
+                      icon: entry.0.icon,
+                      bundleIdentifier: entry.0.bundle,
+                      share: entry.1,
+                      gpuShare: entry.2,
+                      watts: entry.0.energyKnown ? Double(entry.0.energy) / elapsed / 1e9 : nil)
             }
 
         let totalWatts = Double(total) / elapsed / 1e9

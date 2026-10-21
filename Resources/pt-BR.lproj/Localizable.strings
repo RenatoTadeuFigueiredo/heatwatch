@@ -1,9 +1,10 @@
-"a11y.level" = "Temperatura da CPU: %@";
+"a11y.level" = "Nível de calor: %@";
 "level.normal" = "normal";
 "level.elevated" = "elevada";
 "level.high" = "alta";
-"header.temp" = "CPU %@ °C · %d %%";
+"header.cpuLoad" = "%d %%";
 "header.load" = "CPU %d %% de carga";
+"header.gpuTemp" = "GPU %@ °C";
 "header.pending" = "CPU …";
 "menu.measuring" = "Medindo…";
 "menu.idle" = "Nada consumindo energia agora";
@@ -12,3 +13,7 @@
 "menu.quit" = "Sair do HeatWatch";
 "alert.login.title" = "Não foi possível alterar o item de login";
 "menu.watts" = "%@ W";
+"menu.gpuShare" = "%d %%";
+"header.cpu" = "CPU %@ °C · %d %%";
+"header.gpuPending" = "GPU …";
+"menu.unknown" = "—";

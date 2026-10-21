@@ -1,6 +1,7 @@
 #include "Bridging.h"
 
 #include <CoreFoundation/CoreFoundation.h>
+#include <IOKit/IOKitLib.h>
 #include <IOKit/hidsystem/IOHIDEventSystemClient.h>
 #include <IOKit/hidsystem/IOHIDServiceClient.h>
 #include <mach/mach.h>
@@ -19,16 +20,25 @@ double IOHIDEventGetFloatValue(IOHIDEventRef event, int32_t field);
 #define kIOHIDEventTypeTemperatureM 15
 #define IOHID_EVENT_FIELD_BASE(type) ((type) << 16)
 
-#define MAX_SENSORS 32
+#define MAX_SENSORS 64
 #define SENSORS_PER_READ 5
+
+#define ROLE_CPU 0
+#define ROLE_GPU 1
 
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 static IOHIDEventSystemClientRef g_client = NULL;
-static IOHIDServiceClientRef g_sensors[MAX_SENSORS];
+static struct {
+    IOHIDServiceClientRef ref;
+    int role;
+} g_sensors[MAX_SENSORS];
 static int g_sensor_count = 0;
+static int g_cpu_count = 0;
+static int g_gpu_count = 0;
 
 /* CPU load fallback state. */
 static uint64_t g_prev_ticks[4] = {0, 0, 0, 0};
+
 
 static int build_matching_dictionary(CFDictionaryRef *out)
 {
@@ -50,10 +60,12 @@ static int build_matching_dictionary(CFDictionaryRef *out)
 static void release_sensors_locked(void)
 {
     for (int i = 0; i < g_sensor_count; i++) {
-        CFRelease(g_sensors[i]);
-        g_sensors[i] = NULL;
+        CFRelease(g_sensors[i].ref);
+        g_sensors[i].ref = NULL;
     }
     g_sensor_count = 0;
+    g_cpu_count = 0;
+    g_gpu_count = 0;
 }
 
 static int collect_sensors_locked(IOHIDEventSystemClientRef client)
@@ -74,10 +86,21 @@ static int collect_sensors_locked(IOHIDEventSystemClientRef client)
         CFRelease(product);
         if (!converted) continue;
 
-        /* Apple Silicon exposes CPU die sensors as "PMU tdieN". */
-        if (strstr(name, "tdie") == NULL) continue;
+        /* Apple Silicon exposes CPU die sensors as "PMU tdieN" and the GPU
+           clusters as "PMU tdevN". Everything else is board noise here. */
+        int role;
+        if (strstr(name, "tdie") != NULL) {
+            role = ROLE_CPU;
+        } else if (strstr(name, "tdev") != NULL) {
+            role = ROLE_GPU;
+        } else {
+            continue;
+        }
 
-        g_sensors[g_sensor_count++] = (IOHIDServiceClientRef)CFRetain(service);
+        g_sensors[g_sensor_count].ref = (IOHIDServiceClientRef)CFRetain(service);
+        g_sensors[g_sensor_count].role = role;
+        g_sensor_count++;
+        if (role == ROLE_CPU) g_cpu_count++; else g_gpu_count++;
     }
 
     CFRelease(services);
@@ -98,7 +121,7 @@ int hw_temp_init(void)
             collect_sensors_locked(g_client);
         }
     }
-    int count = g_sensor_count;
+    int count = g_cpu_count;
     pthread_mutex_unlock(&g_lock);
     return count;
 }
@@ -106,7 +129,15 @@ int hw_temp_init(void)
 int hw_temp_sensor_count(void)
 {
     pthread_mutex_lock(&g_lock);
-    int count = g_sensor_count;
+    int count = g_cpu_count;
+    pthread_mutex_unlock(&g_lock);
+    return count;
+}
+
+int hw_temp_gpu_sensor_count(void)
+{
+    pthread_mutex_lock(&g_lock);
+    int count = g_gpu_count;
     pthread_mutex_unlock(&g_lock);
     return count;
 }
@@ -118,35 +149,99 @@ void hw_temp_refresh_sensors(void)
     pthread_mutex_unlock(&g_lock);
 }
 
-double hw_temp_read(void)
+/* Reads one sensor, returning -1 for missing or implausible values. */
+static double read_sensor_locked(int index)
+{
+    IOHIDEventRef event = IOHIDServiceClientCopyEvent(g_sensors[index].ref,
+        kIOHIDEventTypeTemperatureM, 0, 0);
+    if (!event) return -1.0;
+
+    double value = IOHIDEventGetFloatValue(event,
+        IOHID_EVENT_FIELD_BASE(kIOHIDEventTypeTemperatureM));
+    CFRelease(event);
+    return (value > 0.0 && value < 130.0) ? value : -1.0;
+}
+
+double hw_temp_read_cpu(void)
 {
     pthread_mutex_lock(&g_lock);
-    if (g_sensor_count == 0) {
+    if (g_cpu_count == 0) {
         pthread_mutex_unlock(&g_lock);
         return -1.0;
     }
 
     /* Sampling a spread of sensors is enough for a trend and keeps SMC traffic low. */
-    int stride = g_sensor_count / SENSORS_PER_READ;
+    int stride = g_cpu_count / SENSORS_PER_READ;
     if (stride < 1) stride = 1;
 
     double sum = 0.0;
-    int samples = 0;
-    for (int i = 0; i < g_sensor_count; i += stride) {
-        IOHIDEventRef event = IOHIDServiceClientCopyEvent(g_sensors[i],
-            kIOHIDEventTypeTemperatureM, 0, 0);
-        if (!event) continue;
-        double value = IOHIDEventGetFloatValue(event,
-            IOHID_EVENT_FIELD_BASE(kIOHIDEventTypeTemperatureM));
-        CFRelease(event);
-        if (value > 0.0 && value < 130.0) {
-            sum += value;
-            samples++;
-        }
+    int samples = 0, seen = 0;
+    for (int i = 0; i < g_sensor_count; i++) {
+        if (g_sensors[i].role != ROLE_CPU) continue;
+        if (seen++ % stride != 0) continue;
+
+        double value = read_sensor_locked(i);
+        if (value < 0) continue;
+        sum += value;
+        samples++;
     }
     pthread_mutex_unlock(&g_lock);
 
     return samples > 0 ? sum / samples : -1.0;
+}
+
+/* The GPU die is a field of hot spots: the hottest cluster is the signal. */
+double hw_temp_read_gpu(void)
+{
+    pthread_mutex_lock(&g_lock);
+    if (g_gpu_count == 0) {
+        pthread_mutex_unlock(&g_lock);
+        return -1.0;
+    }
+
+    double hottest = -1.0;
+    for (int i = 0; i < g_sensor_count; i++) {
+        if (g_sensors[i].role != ROLE_GPU) continue;
+
+        double value = read_sensor_locked(i);
+        if (value > hottest) hottest = value;
+    }
+    pthread_mutex_unlock(&g_lock);
+
+    return hottest;
+}
+
+/* GPU duty cycle, 0-100, straight from the accelerator's own statistics. */
+double hw_gpu_utilization(void)
+{
+    io_iterator_t iterator = 0;
+    if (IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOAccelerator"),
+                                     &iterator) != KERN_SUCCESS) {
+        return -1.0;
+    }
+
+    double busiest = -1.0;
+    io_registry_entry_t service;
+    while ((service = IOIteratorNext(iterator)) != 0) {
+        CFTypeRef stats = IORegistryEntryCreateCFProperty(service, CFSTR("PerformanceStatistics"),
+                                                          kCFAllocatorDefault, 0);
+        if (stats != NULL) {
+            if (CFGetTypeID(stats) == CFDictionaryGetTypeID()) {
+                CFTypeRef value = CFDictionaryGetValue((CFDictionaryRef)stats,
+                                                       CFSTR("Device Utilization %"));
+                int percent = -1;
+                if (value != NULL && CFGetTypeID(value) == CFNumberGetTypeID()) {
+                    CFNumberGetValue((CFNumberRef)value, kCFNumberIntType, &percent);
+                    if (percent > busiest) busiest = percent;
+                }
+            }
+            CFRelease(stats);
+        }
+        IOObjectRelease(service);
+    }
+    IOObjectRelease(iterator);
+
+    return busiest;
 }
 
 void hw_temp_close(void)
@@ -159,6 +254,7 @@ void hw_temp_close(void)
     }
     pthread_mutex_unlock(&g_lock);
 }
+
 
 double hw_cpu_load(void)
 {

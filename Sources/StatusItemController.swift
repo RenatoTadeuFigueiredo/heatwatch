@@ -8,11 +8,14 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     private let temperature = TemperatureMonitor()
     private let sampler = EnergySampler()
+    private let gpuQueue = DispatchQueue(label: "heatwatch.gpu", qos: .utility)
+    private var gpuBaseline: [pid_t: UInt64] = [:]
 
     private var dotImages: [HeatLevel: NSImage] = [:]
     private var liveRefreshTimer: Timer?
     private var backgroundBaselineTimer: Timer?
     private var headerItem: NSMenuItem?
+    private var gpuHeaderItem: NSMenuItem?
     private var rowItems: [NSMenuItem] = []
     private var measuringItem: NSMenuItem?
     private var idleItem: NSMenuItem?
@@ -69,7 +72,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
 
         if menuIsOpen {
-            headerItem?.attributedTitle = headerText()
+            headerItem?.attributedTitle = cpuHeaderText()
+            gpuHeaderItem?.attributedTitle = gpuHeaderText(reading)
         }
     }
 
@@ -77,7 +81,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         currentLevel = level
         statusItem.button?.image = dotImages[level]
         statusItem.button?.setAccessibilityLabel(
-            String(format: L("a11y.level", "CPU temperature: %@"), label(for: level)))
+            String(format: L("a11y.level", "Heat level: %@"), label(for: level)))
     }
 
     private func label(for level: HeatLevel) -> String {
@@ -97,6 +101,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let fresh = lastReportAt.map { Date().timeIntervalSince($0) < 30 } ?? false
         apply(fresh ? lastReport : nil)
 
+        // GPU counters are only needed while the list is visible.
+        refreshGpuBaseline()
         requestReport()
 
         let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
@@ -116,17 +122,59 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         guard !reportPending else { return }
         reportPending = true
 
-        sampler.report { [weak self] report in
+        gpuQueue.async { [weak self] in
             guard let self else { return }
-            self.reportPending = false
-            guard self.menuIsOpen else { return }
+            let deltas = self.collectGpuSeconds()
 
-            if let report {
-                self.lastReport = report
-                self.lastReportAt = Date()
+            self.sampler.report(gpuSeconds: deltas) { [weak self] report in
+                guard let self else { return }
+                self.reportPending = false
+                guard self.menuIsOpen else { return }
+
+                if let report {
+                    self.lastReport = report
+                    self.lastReportAt = Date()
+                }
+                self.apply(report)
             }
-            self.apply(report)
         }
+    }
+
+    // MARK: - GPU time
+
+    private func refreshGpuBaseline() {
+        gpuQueue.async { [weak self] in
+            guard let self else { return }
+            self.gpuBaseline = Self.gpuTimeSnapshot()
+        }
+    }
+
+    /// Per-process GPU seconds since the last baseline. Counters restart when a
+    /// command queue is recycled, so a shrinking value is treated as zero.
+    private func collectGpuSeconds() -> [pid_t: Double] {
+        let current = Self.gpuTimeSnapshot()
+        let previous = gpuBaseline
+        gpuBaseline = current
+
+        var deltas: [pid_t: Double] = [:]
+        for (pid, nanoseconds) in current {
+            guard let before = previous[pid], nanoseconds > before else { continue }
+            deltas[pid] = Double(nanoseconds - before) / 1e9
+        }
+        return deltas
+    }
+
+    private static func gpuTimeSnapshot() -> [pid_t: UInt64] {
+        var pointer: UnsafeMutablePointer<proc_gpu_time_t>?
+        let count = Int(gpu_time_snapshot(&pointer))
+        defer { free(pointer) }
+        guard count > 0, let entries = pointer else { return [:] }
+
+        var values: [pid_t: UInt64] = [:]
+        for index in 0..<count {
+            values[entries[index].pid, default: 0] += entries[index].gpu_ns
+        }
+        return values
     }
 
     // MARK: - Rendering
@@ -135,10 +183,18 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.removeAllItems()
 
         let header = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        header.attributedTitle = headerText()
+        header.attributedTitle = cpuHeaderText()
         header.isEnabled = true
         menu.addItem(header)
         headerItem = header
+
+        let gpuHeader = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        gpuHeader.attributedTitle = lastReading.map(gpuHeaderText) ??
+            NSAttributedString(string: L("header.gpuPending", "GPU …"))
+        gpuHeader.isEnabled = true
+        gpuHeader.isHidden = !(lastReading?.hasGpu ?? true)
+        menu.addItem(gpuHeader)
+        gpuHeaderItem = gpuHeader
 
         menu.addItem(.separator())
 
@@ -186,7 +242,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             }
             let usage = report.usages[index]
             item.isHidden = false
-            item.attributedTitle = usageTitle(name: usage.name, watts: usage.watts)
+            item.attributedTitle = usageTitle(name: usage.name, watts: usage.watts,
+                                              gpuShare: usage.gpuShare)
             item.image = usage.icon ?? Self.blankIcon
             item.representedObject = usage.bundleIdentifier
             item.isEnabled = true
@@ -202,25 +259,48 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         return item
     }
 
-    private func headerText() -> NSAttributedString {
-        let value: String
-        if let reading = lastReading {
-            value = reading.isFallback
-                ? String(format: L("header.load", "CPU %d %% load"), Int(reading.load.rounded()))
-                : String(format: L("header.temp", "CPU %@ °C · %d %%"),
-                         Self.decimal(reading.value, digits: 1), Int(reading.load.rounded()))
-        } else {
-            value = L("header.pending", "CPU …")
+    private static let headerStyle: [NSAttributedString.Key: Any] = [
+        .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+    ]
+
+    private func cpuHeaderText() -> NSAttributedString {
+        guard let reading = lastReading else {
+            return NSAttributedString(string: L("header.pending", "CPU …"),
+                                      attributes: Self.headerStyle)
         }
 
-        return NSAttributedString(string: value, attributes: [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
-        ])
+        let value: String
+        if reading.isFallback {
+            value = String(format: L("header.load", "CPU %d %% load"), Int(reading.load.rounded()))
+        } else {
+            value = String(format: L("header.cpu", "CPU %@ °C · %d %%"),
+                           Self.decimal(reading.value, digits: 1), Int(reading.load.rounded()))
+        }
+        return NSAttributedString(string: value, attributes: Self.headerStyle)
     }
 
-    private func usageTitle(name: String, watts: Double) -> NSAttributedString {
+    private func gpuHeaderText(_ reading: TemperatureMonitor.Reading) -> NSAttributedString {
+        var parts: [String] = []
+        if reading.gpuValue > 0 {
+            parts.append(String(format: L("header.gpuTemp", "GPU %@ °C"),
+                                Self.decimal(reading.gpuValue, digits: 1)))
+        }
+        if reading.gpuLoad >= 0 {
+            parts.append(String(format: L("header.cpuLoad", "%d %%"), Int(reading.gpuLoad.rounded())))
+        }
+
+        let value = parts.isEmpty
+            ? L("header.gpuPending", "GPU …")
+            : parts.joined(separator: " · ")
+        return NSAttributedString(string: value, attributes: Self.headerStyle)
+    }
+
+    private func usageTitle(name: String, watts: Double?, gpuShare: Double) -> NSAttributedString {
         let style = NSMutableParagraphStyle()
-        style.tabStops = [NSTextTab(textAlignment: .right, location: 232, options: [:])]
+        style.tabStops = [
+            NSTextTab(textAlignment: .right, location: 186, options: [:]),
+            NSTextTab(textAlignment: .right, location: 232, options: [:])
+        ]
         style.defaultTabInterval = 232
         style.lineBreakMode = .byTruncatingTail
 
@@ -229,8 +309,19 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             .font: font
         ])
         text.append(NSAttributedString(string: "\t", attributes: [.paragraphStyle: style]))
-        text.append(NSAttributedString(string: String(format: L("menu.watts", "%@ W"),
-                                                         Self.decimal(watts, digits: 1)), attributes: [
+
+        // GPU time is shown as a share of all GPU time; energy alone hides a
+        // process that only spins the accelerator.
+        let gpuText = gpuShare >= 1 ? String(format: L("menu.gpuShare", "%d %%"), Int(gpuShare.rounded())) : ""
+        text.append(NSAttributedString(string: gpuText, attributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular),
+            .foregroundColor: gpuShare >= 60 ? NSColor.labelColor : NSColor.secondaryLabelColor
+        ]))
+
+        text.append(NSAttributedString(string: "\t", attributes: [.paragraphStyle: style]))
+        let wattsText = watts.map { String(format: L("menu.watts", "%@ W"), Self.decimal($0, digits: 1)) }
+            ?? L("menu.unknown", "—")
+        text.append(NSAttributedString(string: wattsText, attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular),
             .foregroundColor: NSColor.secondaryLabelColor
         ]))
