@@ -72,7 +72,7 @@ Click the dot:
 | Row | Meaning |
 |---|---|
 | `CPU 61.4 °C · 12 %` | Current die temperature and total CPU load |
-| App rows | Share of measured energy per app over the last ~2 s |
+| App rows | Energy draw per app over the last ~2 s, longest names clipped in the middle |
 | `All processes: 7.1 W` | Total energy attributable to user processes |
 | `Open at login` | Registers the app as a login item |
 

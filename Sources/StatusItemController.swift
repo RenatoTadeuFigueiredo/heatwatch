@@ -150,6 +150,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         rowItems = (0..<5).map { _ in
             let item = NSMenuItem(title: "", action: #selector(activateApp(_:)), keyEquivalent: "")
             item.target = self
+            item.image = Self.blankIcon
             menu.addItem(item)
             return item
         }
@@ -185,8 +186,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             }
             let usage = report.usages[index]
             item.isHidden = false
-            item.attributedTitle = usageTitle(name: usage.name, share: usage.share)
-            item.image = usage.icon
+            item.attributedTitle = usageTitle(name: usage.name, watts: usage.watts)
+            item.image = usage.icon ?? Self.blankIcon
             item.representedObject = usage.bundleIdentifier
             item.isEnabled = true
         }
@@ -217,16 +218,19 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         ])
     }
 
-    private func usageTitle(name: String, share: Double) -> NSAttributedString {
+    private func usageTitle(name: String, watts: Double) -> NSAttributedString {
         let style = NSMutableParagraphStyle()
-        style.tabStops = [NSTextTab(textAlignment: .right, location: 220, options: [:])]
-        style.defaultTabInterval = 220
+        style.tabStops = [NSTextTab(textAlignment: .right, location: 232, options: [:])]
+        style.defaultTabInterval = 232
+        style.lineBreakMode = .byTruncatingTail
 
-        let text = NSMutableAttributedString(string: name, attributes: [
-            .font: NSFont.systemFont(ofSize: 13)
+        let font = NSFont.systemFont(ofSize: 13)
+        let text = NSMutableAttributedString(string: Self.fit(name, font: font, width: 150), attributes: [
+            .font: font
         ])
         text.append(NSAttributedString(string: "\t", attributes: [.paragraphStyle: style]))
-        text.append(NSAttributedString(string: "\(Self.decimal(share, digits: 1)) %", attributes: [
+        text.append(NSAttributedString(string: String(format: L("menu.watts", "%@ W"),
+                                                         Self.decimal(watts, digits: 1)), attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular),
             .foregroundColor: NSColor.secondaryLabelColor
         ]))
@@ -289,6 +293,36 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func quit() {
         NSApp.terminate(nil)
     }
+
+    /// Clips a name to the fixed column, keeping the tail where Chrome-style
+    /// helper suffixes live ("(Aperitif)" vs "(Aperitif Renderer)").
+    private static func fit(_ text: String, font: NSFont, width: CGFloat) -> String {
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        if (text as NSString).size(withAttributes: attributes).width <= width { return text }
+
+        let characters = Array(text)
+        let tailCount = min(14, characters.count / 2)
+        let suffix = String(characters.suffix(tailCount))
+        var head = String(characters.dropLast(tailCount))
+
+        while !head.isEmpty {
+            head.removeLast()
+            let candidate = head + "…" + suffix
+            if (candidate as NSString).size(withAttributes: attributes).width <= width {
+                return candidate
+            }
+        }
+        return "…" + suffix
+    }
+
+    private static let blankIcon: NSImage = {
+        let image = NSImage(size: NSSize(width: 16, height: 16))
+        image.lockFocus()
+        NSColor.clear.setFill()
+        NSRect(x: 0, y: 0, width: 16, height: 16).fill()
+        image.unlockFocus()
+        return image
+    }()
 
     private static func decimal(_ value: Double, digits: Int) -> String {
         String(format: "%.*f", digits, value).replacingOccurrences(of: ".", with: ",")

@@ -11,3 +11,4 @@
 "menu.login" = "Open at login";
 "menu.quit" = "Quit HeatWatch";
 "alert.login.title" = "Could not change the login item";
+"menu.watts" = "%@ W";
