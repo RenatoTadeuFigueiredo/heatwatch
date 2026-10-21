@@ -19,17 +19,21 @@ final class TemperatureMonitor {
         let timestamp: Date
     }
 
-    /// Calibrated on an M3 Max: idle sits near 60-63 °C, 14 busy cores sustain 66-68 °C.
-    /// The load term keeps the indicator useful when the fan curve hides a heavy workload.
-    /// Both limits are overridable with `defaults write local.renato.heatwatch warmCelsius 70`.
-    private static var warmThreshold: Double { threshold("warmCelsius", fallback: 66) }
-    private static var hotThreshold: Double { threshold("hotCelsius", fallback: 74) }
+    /// Thresholds follow each machine's own idle floor instead of a hardcoded
+    /// figure, because an Air idles around 40 °C where an M3 Max idles near 60 °C.
+    /// The floor drops instantly and drifts up slowly, so a warm room or a long
+    /// render is absorbed without permanent false alarms.
+    /// Absolute overrides: `defaults write local.renato.heatwatch warmCelsius 70`.
+    private static let warmOffset = 8.0
+    private static let hotOffset = 18.0
+    private static var warmAbsolute: Double { threshold("warmCelsius") }
+    private static var hotAbsolute: Double { threshold("hotCelsius") }
     private static var warmLoad: Double { threshold("warmLoadPercent", fallback: 45) }
     private static var hotLoad: Double { threshold("hotLoadPercent", fallback: 85) }
     private static let trendWindow: TimeInterval = 60
     private static let trendRise = 2.0
 
-    private static func threshold(_ key: String, fallback: Double) -> Double {
+    private static func threshold(_ key: String, fallback: Double = 0) -> Double {
         let value = UserDefaults.standard.double(forKey: key)
         return value > 0 ? value : fallback
     }
@@ -38,6 +42,7 @@ final class TemperatureMonitor {
     private var pollTimer: DispatchSourceTimer?
     private var sensorRefreshTimer: DispatchSourceTimer?
     private var history: [Reading] = []
+    private var floor: Double?
     private var sensorCount = 0
     private var consecutiveFailures = 0
     private var stopped = false
@@ -45,7 +50,9 @@ final class TemperatureMonitor {
     var onUpdate: ((Reading) -> Void)?
 
     func start() {
-        sensorCount = Int(hw_temp_init())
+        sensorCount = ProcessInfo.processInfo.environment["HEATWATCH_FORCE_FALLBACK"] == "1"
+            ? 0
+            : Int(hw_temp_init())
         if sensorCount == 0 {
             NSLog("HeatWatch: no die sensors, falling back to CPU load")
         }
@@ -112,8 +119,10 @@ final class TemperatureMonitor {
             consecutiveFailures = 0
         }
 
+        let baseline = updateFloor(value)
         let reading = Reading(value: value, load: max(load, 0), isFallback: isFallback,
-                              level: level(temperature: value, load: load), timestamp: Date())
+                              level: level(temperature: value, baseline: baseline, load: load),
+                              timestamp: Date())
 
         history.append(reading)
         history.removeAll { reading.timestamp.timeIntervalSince($0.timestamp) > TemperatureMonitor.trendWindow }
@@ -123,8 +132,20 @@ final class TemperatureMonitor {
         }
     }
 
-    private func level(temperature: Double, load: Double) -> HeatLevel {
-        var result = level(forTemperature: temperature)
+    /// Tracks the idle floor: instant on the way down, 2 % of the gap per tick upwards.
+    private func updateFloor(_ value: Double) -> Double {
+        guard let current = floor else {
+            floor = value
+            return value
+        }
+        let next = value <= current ? value : current + (value - current) * 0.02
+        let clamped = min(max(next, 30), 80)
+        floor = clamped
+        return clamped
+    }
+
+    private func level(temperature: Double, baseline: Double, load: Double) -> HeatLevel {
+        var result = level(forTemperature: temperature, baseline: baseline)
         let loadLevel = level(forLoad: load)
         if loadLevel.rawValue > result.rawValue {
             result = loadLevel
@@ -137,9 +158,16 @@ final class TemperatureMonitor {
         return .warm
     }
 
-    private func level(forTemperature value: Double) -> HeatLevel {
-        if value >= TemperatureMonitor.hotThreshold { return .hot }
-        if value >= TemperatureMonitor.warmThreshold { return .warm }
+    private func level(forTemperature value: Double, baseline: Double) -> HeatLevel {
+        let hot = TemperatureMonitor.hotAbsolute > 0
+            ? TemperatureMonitor.hotAbsolute
+            : baseline + TemperatureMonitor.hotOffset
+        let warm = TemperatureMonitor.warmAbsolute > 0
+            ? TemperatureMonitor.warmAbsolute
+            : baseline + TemperatureMonitor.warmOffset
+
+        if value >= hot { return .hot }
+        if value >= warm { return .warm }
         return .cool
     }
 

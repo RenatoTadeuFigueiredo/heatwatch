@@ -17,7 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 /// Headless mode used for verification: prints one temperature reading and one ranking.
 private func runProbe() {
-    let sensors = Int(hw_temp_init())
+    let sensors = ProcessInfo.processInfo.environment["HEATWATCH_FORCE_FALLBACK"] == "1"
+        ? 0
+        : Int(hw_temp_init())
     defer { hw_temp_close() }
 
     let sampler = EnergySampler()
@@ -28,8 +30,8 @@ private func runProbe() {
     sampler.report { report in
         defer { finished = true }
 
-        let temperature = hw_temp_read()
-        print(String(format: "sensors=%d temp=%.1f°C", sensors, temperature))
+        let temperature = sensors > 0 ? hw_temp_read() : -1
+        print(String(format: "sensors=%d temp=%.1f°C load=%.0f%%", sensors, temperature, hw_cpu_load()))
         guard let report else {
             print("no report")
             return

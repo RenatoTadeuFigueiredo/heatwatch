@@ -1,0 +1,27 @@
+HeatWatch — install
+===================
+
+1. Drag HeatWatch.app into /Applications.
+
+2. First launch (Gatekeeper) — this build is signed ad-hoc, not notarized:
+       xattr -dr com.apple.quarantine /Applications/HeatWatch.app
+     then open the app normally.
+   On macOS 14 and older, right-click (Control-click) → "Open" → "Open" also
+   works. On newer versions, System Settings → Privacy & Security →
+   "Open Anyway" is the GUI path.
+
+3. The colored dot appears next to the clock. Click it for the five apps
+   drawing the most energy right now.
+
+4. "Abrir no login" in the menu starts it at login.
+
+Uninstall: quit from the menu, then delete /Applications/HeatWatch.app.
+
+Notes
+-----
+- No network, no telemetry, no privileged helper, no TCC prompts.
+- Temperature comes from die sensors (Apple Silicon) or CPU load (Intel Macs).
+- Thresholds adapt to each machine's own idle floor; absolute overrides:
+    defaults write local.renato.heatwatch warmCelsius 70
+    defaults write local.renato.heatwatch hotCelsius 80
+- Requires macOS 13 or newer.

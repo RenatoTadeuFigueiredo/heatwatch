@@ -12,7 +12,7 @@ Native AppKit, no Electron, no network, no root helper.
 |---|---|---|
 | Idle, menu closed | 0.0-0.2 % | ~22 MB |
 | Menu open (2 s refresh) | ~0.6 % | ~23 MB |
-| Bundle on disk | — | 220 KB |
+| Bundle on disk | — | 728 KB (universal) |
 
 The idle cost is one temperature read every 10 s (~3 ms) plus one process scan
 every 15 s (~6 ms). Process scanning stops completely while the menu is closed,
@@ -29,6 +29,40 @@ apart from that baseline sample.
 - **Color** — `max(temperature band, load band)`, with an extra bump when the
   die temperature climbs 2 °C within a minute. Load is included because a well
   cooled Mac hides heavy work behind a flat temperature curve.
+- **Per-machine thresholds** — bands follow the machine's own idle floor
+  (dropping instantly, drifting up 2 %/tick), because an Air idles near 40 °C
+  where an M3 Max idles near 60 °C. Fixed offsets: +8 °C warm, +18 °C hot.
+
+## Distribution
+
+The bundle is universal (arm64 + x86_64) but **only ad-hoc signed**, so a
+downloaded copy is rejected by Gatekeeper until the quarantine flag is cleared:
+
+```
+$ spctl -a -vvv -t exec HeatWatch.app
+HeatWatch.app: rejected
+```
+
+Two viable paths:
+
+1. **Free / private** — ship the ZIP or DMG from `./dist.sh` plus `INSTALL.txt`
+   and let recipients run `xattr -dr com.apple.quarantine`. Works today, no
+   Apple account, some friction and a scary dialog.
+2. **Notarized** — Apple Developer Program, then:
+   ```sh
+   DEVELOPER_ID="Developer ID Application: Name (TEAMID)" \
+   NOTARY_PROFILE="heatwatch" ./dist.sh
+   ```
+   Credentials are stored once with `xcrun notarytool store-credentials`.
+   Notarized builds open with no warning.
+
+`dist.sh` builds, optionally signs and notarizes, then packages
+`dist/HeatWatch-<version>.zip`, `.dmg` and `SHA256SUMS`. A Homebrew cask tap is
+the other way to skip the quarantine dialog without an Apple account.
+
+Note that the temperature API (`IOHIDEventSystemClient*`) is private, so the App
+Store is not an option without running `powermetrics` behind a privileged
+helper.
 
 ## Build and install
 
@@ -53,8 +87,8 @@ defaults write local.renato.heatwatch warmLoadPercent 60
 defaults write local.renato.heatwatch hotLoadPercent 90
 ```
 
-Defaults are calibrated for this machine (idle 60-63 °C, 14 busy cores sustain
-66-68 °C): 66 °C / 74 °C and 45 % / 85 % load.
+Absolute overrides disable the adaptive floor for that band. Load bands stay at
+45 % / 85 % unless overridden.
 
 ## Verification
 
